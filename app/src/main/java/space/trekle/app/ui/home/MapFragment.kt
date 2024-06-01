@@ -1,6 +1,10 @@
 package space.trekle.app.ui.home
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.content.pm.PackageManager
+import android.graphics.Color
+import android.location.Location
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
@@ -11,9 +15,16 @@ import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.ListView
 import android.widget.Toast
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import org.maplibre.android.MapLibre
+import org.maplibre.android.annotations.MarkerOptions
+import org.maplibre.android.camera.CameraUpdateFactory.newLatLngZoom
+import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.location.LocationComponentActivationOptions
 import org.maplibre.android.location.permissions.PermissionsListener
 import org.maplibre.android.location.permissions.PermissionsManager
@@ -21,24 +32,55 @@ import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.OnMapReadyCallback
 import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.geojson.utils.PolylineUtils
 import space.trekle.app.R
 import space.trekle.app.databinding.FragmentHomeBinding
 import space.trekle.app.services.routing.RouteListener
 import space.trekle.app.services.routing.RouteResponse
 import space.trekle.app.services.routing.RouteService
 
+
 class MapFragment : Fragment(), OnMapReadyCallback, PermissionsListener, RouteListener {
 
     private var _binding: FragmentHomeBinding? = null
     private val binding get() = _binding!!
 
+
+    private val ROUTING_LAYER = "route-layer"
+    private val ROUTING_SOURCE = "route-source"
+    private val ROUTING_COLOR = "#6200EA"
+
+    private val PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION = 1
     private lateinit var mapView: MapView
     private lateinit var mapLibreMap: MapLibreMap
     private lateinit var buttonChangeStyle: Button
     private lateinit var permissionsManager: PermissionsManager
     private lateinit var routeService: RouteService
+
+    private var locationPermissionGranted = false
+
+    private var fusedLocationClient: FusedLocationProviderClient? = null
+
+    private fun getLocationPermission() {
+        if (ContextCompat.checkSelfPermission(
+                requireContext(),
+                Manifest.permission.ACCESS_FINE_LOCATION
+            )
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            locationPermissionGranted = true
+        } else {
+            ActivityCompat.requestPermissions(
+                requireActivity(),
+                arrayOf<String>(Manifest.permission.ACCESS_FINE_LOCATION),
+                PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION
+            )
+        }
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -67,6 +109,10 @@ class MapFragment : Fragment(), OnMapReadyCallback, PermissionsListener, RouteLi
         mapView.onCreate(savedInstanceState)
         mapView.getMapAsync(this)
 
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(requireActivity());
+
+        getLocationPermission();
+
         return root
     }
 
@@ -78,6 +124,7 @@ class MapFragment : Fragment(), OnMapReadyCallback, PermissionsListener, RouteLi
             enableLocationComponent(style)
         }
 
+
         mapLibreMap.addOnMapLongClickListener {
             // Handle map long click events
             Toast.makeText(requireContext(), "Map long click at: $it", Toast.LENGTH_SHORT).show()
@@ -85,7 +132,23 @@ class MapFragment : Fragment(), OnMapReadyCallback, PermissionsListener, RouteLi
             routeService.addPoint(doubleArrayOf(it.longitude, it.latitude))
             false
         }
+        getDeviceLocation()
     }
+
+    private fun getDeviceLocation() {
+        try {
+            if (locationPermissionGranted) {
+                fusedLocationClient?.lastLocation?.addOnSuccessListener { location: Location? ->
+                    if (location != null) {
+                        moveCameraToLocation(LatLng(location.latitude, location.longitude))
+                    }
+                }
+            }
+        } catch (e: SecurityException) {
+            e.printStackTrace()
+        }
+    }
+
 
     @SuppressLint("MissingPermission")
     private fun enableLocationComponent(loadedMapStyle: Style) {
@@ -198,10 +261,63 @@ class MapFragment : Fragment(), OnMapReadyCallback, PermissionsListener, RouteLi
     }
 
     override fun onPointsChanged(points: List<DoubleArray>) {
-        TODO("Not yet implemented")
+        for (point in points) {
+            val markerOptions = MarkerOptions()
+                .position(LatLng(point[1], point[0]))
+            mapLibreMap.addMarker(markerOptions)
+        }
+    }
+
+
+    fun initRouteSource(style: Style, lineString: String) {
+        val geoJsonSource = GeoJsonSource(ROUTING_SOURCE, lineString)
+        // check if the source is already added to the style
+
+        val source = style.getSourceAs<GeoJsonSource>(ROUTING_SOURCE)
+        if (source != null) {
+            source.setGeoJson(lineString)
+            return
+        }
+        style.addSource(geoJsonSource)
+        val lineLayer = LineLayer(ROUTING_LAYER, ROUTING_SOURCE).apply {
+            setProperties(
+                PropertyFactory.lineColor(Color.parseColor(ROUTING_COLOR)),
+                PropertyFactory.lineWidth(5f)
+            )
+        }
+        style.addLayer(lineLayer)
+    }
+
+    private fun moveCameraToLocation(location: LatLng) {
+        mapLibreMap.animateCamera(
+            newLatLngZoom(
+                location, 15.0
+            ), 1000
+        )
     }
 
     override fun onRouteChanged(route: RouteResponse?) {
         Log.d("Trekle.HomeFragment", "Route changed: ${route?.trip?.summary}")
+
+        val coordinates = mutableListOf<List<Double>>()
+        for (leg in route?.trip?.legs!!) {
+            val shape = leg.shape
+            PolylineUtils.decode(shape, 6).let { decodedPath ->
+                coordinates.addAll(decodedPath.map { listOf(it.longitude(), it.latitude()) })
+            }
+        }
+        val lineString = """
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": $coordinates
+                },
+                "properties": {}
+            }
+        """.trimIndent()
+        activity?.runOnUiThread {
+            mapLibreMap.style?.let { initRouteSource(it, lineString) }
+        }
     }
 }

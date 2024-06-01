@@ -25,6 +25,9 @@ class RouteService(autoCalcRoute: Boolean=false) {
 
     fun addPoint(point: DoubleArray) {
         points!!.add(point)
+        for (listener in listeners) {
+            listener.onPointsChanged(points)
+        }
         if (points.size > 1 ){
             calculateRoute()
         }
@@ -54,38 +57,5 @@ class RouteService(autoCalcRoute: Boolean=false) {
                 Log.e("RouteService", "Route calculation failed: $throwable")
             }
         }
-        /*
-        router.setCallback(object : RouteCallback {
-
-            override fun failure(statusCode: Int) {
-                Log.e("TrekleApp.RouteService", "Route calculation failed with status code: $statusCode")
-            }
-
-            override fun success(route: com.mapzen.valhalla.Route) {
-                Log.d("TrekleApp.RouteService", "Route calculated: $route")
-                for (listener in listeners) {
-                    listener.onRouteChanged(Route(route))
-                }
-            }
-        }).fetch()
-
-         */
-        /*
-        ValhallaRouter()
-            .setBiking() // Driving is default (setBiking, setWalking also available)
-            .setLocation(doubleArrayOf(lat, lng)) // required
-            .setLocation(doubleArrayOf(lat, lng)) // required
-            .setCallback(object : Callback() {
-                fun success(route: Route?) {
-                    // do stuff
-                }
-
-                fun failure(statusCode: Int) {
-                    // do stuff
-                }
-            }).fetch()
-
-         */
-
     }
 }
