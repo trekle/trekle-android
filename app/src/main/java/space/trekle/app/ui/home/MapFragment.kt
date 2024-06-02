@@ -13,14 +13,19 @@ import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
+
 import android.widget.ListView
-import android.widget.Toast
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import org.maplibre.android.MapLibre
 import org.maplibre.android.annotations.MarkerOptions
 import org.maplibre.android.camera.CameraUpdateFactory.newLatLngZoom
@@ -61,9 +66,12 @@ class MapFragment : Fragment(), OnMapReadyCallback, PermissionsListener, RouteLi
     private lateinit var permissionsManager: PermissionsManager
     private lateinit var routeService: RouteService
 
+    private lateinit var stateMachine : MapStateMachine
     private var locationPermissionGranted = false
 
     private var fusedLocationClient: FusedLocationProviderClient? = null
+
+    private lateinit var root : View
 
     private fun getLocationPermission() {
         if (ContextCompat.checkSelfPermission(
@@ -124,15 +132,63 @@ class MapFragment : Fragment(), OnMapReadyCallback, PermissionsListener, RouteLi
             enableLocationComponent(style)
         }
 
+        stateMachine = MapStateMachine(routeService, ::openBottomSheetPoi)
 
-        mapLibreMap.addOnMapLongClickListener {
-            // Handle map long click events
-            Toast.makeText(requireContext(), "Map long click at: $it", Toast.LENGTH_SHORT).show()
-            Log.d("TrekleApp.map", "Map long click at: $it")
-            routeService.addPoint(doubleArrayOf(it.longitude, it.latitude))
-            false
+
+        mapLibreMap.addOnMapLongClickListener { point->
+            stateMachine.handleEvent(MapEvent.LongClick(point))
+            return@addOnMapLongClickListener false
         }
+
+        mapLibreMap.addOnMapClickListener { point ->
+            stateMachine.handleEvent(MapEvent.Click(point))
+            return@addOnMapClickListener false
+        }
+
         getDeviceLocation()
+    }
+
+    /**
+     * Open a bottom sheet to show the POI options
+     */
+    private fun openBottomSheetPoi(event: MapEvent) {
+        val dialog = BottomSheetDialog(requireContext())
+        val view = layoutInflater.inflate(R.layout.bottom_modal_poi, null)
+        val gotoButton = view.findViewById<Button>(R.id.button_routing_goto)
+        gotoButton.setOnClickListener(View.OnClickListener {
+            // get current position
+            Log.d("Trekle.HomeFragment", "Routing to ${event.latLng}")
+            mapLibreMap.locationComponent.lastKnownLocation?.let {
+                routeService.addPoint(doubleArrayOf(it.latitude, it.longitude))
+                routeService.addPoint(doubleArrayOf(event.latLng.latitude, event.latLng.longitude))
+            }
+            dialog.dismiss()
+        })
+        dialog.setContentView(view)
+        dialog.show()
+    }
+
+    private fun openBottomSheetRouting() {
+        val dialog = BottomSheetDialog(requireContext())
+        val view = layoutInflater.inflate(R.layout.bottom_modal_routing, null)
+        val startButton = view.findViewById<Button>(R.id.button_routing_cancel)
+        startButton.setOnClickListener(View.OnClickListener {
+            // get current position
+            Log.d("Trekle.HomeFragment", "Start routing")
+            removeRoute()
+            dialog.dismiss()
+        })
+        dialog.setCancelable(false)
+        dialog.setContentView(view)
+        dialog.show()
+    }
+
+    private fun removeRoute() {
+        routeService.clearPoints()
+        stateMachine.SetState(MapState.Idle)
+        mapLibreMap.style?.removeLayer(ROUTING_LAYER)
+        mapLibreMap.style?.removeSource(ROUTING_SOURCE)
+        mapLibreMap.clear()
     }
 
     private fun getDeviceLocation() {
@@ -189,6 +245,11 @@ class MapFragment : Fragment(), OnMapReadyCallback, PermissionsListener, RouteLi
         } else {
             // Permission not granted
         }
+    }
+
+    private fun openBottomSheetPointSelector() {
+        // Implement this method to open a bottom sheet to select a point
+
     }
 
     private fun openBottomSheet(style: Style) {
@@ -263,7 +324,7 @@ class MapFragment : Fragment(), OnMapReadyCallback, PermissionsListener, RouteLi
     override fun onPointsChanged(points: List<DoubleArray>) {
         for (point in points) {
             val markerOptions = MarkerOptions()
-                .position(LatLng(point[1], point[0]))
+                .position(LatLng(point[0], point[1]))
             mapLibreMap.addMarker(markerOptions)
         }
     }
@@ -318,6 +379,7 @@ class MapFragment : Fragment(), OnMapReadyCallback, PermissionsListener, RouteLi
         """.trimIndent()
         activity?.runOnUiThread {
             mapLibreMap.style?.let { initRouteSource(it, lineString) }
+            openBottomSheetRouting()
         }
     }
 }

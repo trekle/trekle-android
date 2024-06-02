@@ -54,6 +54,6 @@ class RoutingClient(
         return RouteRequest(locationList, costing, narrative)
     }
 
-    data class Location(val lon: Double, val lat: Double)
+    data class Location(val lat: Double, val lon: Double)
     data class RouteRequest(val locations: List<Location>, val costing: String, val narrative: Boolean)
 }
