@@ -1,10 +1,10 @@
 package space.trekle.app.services.routing
 
 import android.util.Log
-import org.json.JSONObject
 
 
 interface RouteListener {
+
     fun onPointsChanged(points: List<DoubleArray>)
     fun onRouteChanged(route: RouteResponse?) // Define Route as per your needs
 }
@@ -35,6 +35,10 @@ class RouteService(autoCalcRoute: Boolean=false) {
 
     fun removePoint(point: DoubleArray) {
         points!!.remove(point)
+    }
+
+    fun removeLastPoint() {
+        points!!.removeAt(points.size - 1)
     }
 
     fun getPoints(): List<DoubleArray>? {

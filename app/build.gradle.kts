@@ -42,6 +42,9 @@ android {
 }
 
 dependencies {
+    implementation("com.github.skydoves:flexible-bottomsheet-material3:0.1.2")
+
+
     val composeBom = platform("androidx.compose:compose-bom:2024.05.00")
     implementation(composeBom)
     androidTestImplementation(composeBom)

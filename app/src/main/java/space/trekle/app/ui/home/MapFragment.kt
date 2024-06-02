@@ -13,11 +13,7 @@ import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
-
 import android.widget.ListView
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -25,7 +21,6 @@ import androidx.fragment.app.Fragment
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.material.bottomsheet.BottomSheetDialog
-import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import org.maplibre.android.MapLibre
 import org.maplibre.android.annotations.MarkerOptions
 import org.maplibre.android.camera.CameraUpdateFactory.newLatLngZoom
@@ -47,6 +42,7 @@ import space.trekle.app.databinding.FragmentHomeBinding
 import space.trekle.app.services.routing.RouteListener
 import space.trekle.app.services.routing.RouteResponse
 import space.trekle.app.services.routing.RouteService
+import space.trekle.app.ui.modal.BottomSheetRouting
 
 
 class MapFragment : Fragment(), OnMapReadyCallback, PermissionsListener, RouteListener {
@@ -101,7 +97,7 @@ class MapFragment : Fragment(), OnMapReadyCallback, PermissionsListener, RouteLi
 
         MapLibre.getInstance(requireContext())
         _binding = FragmentHomeBinding.inflate(inflater, container, false)
-        val root: View = binding.root
+        root= binding.root
 
         buttonChangeStyle = root.findViewById(R.id.button_change_style)
 
@@ -168,19 +164,17 @@ class MapFragment : Fragment(), OnMapReadyCallback, PermissionsListener, RouteLi
         dialog.show()
     }
 
-    private fun openBottomSheetRouting() {
-        val dialog = BottomSheetDialog(requireContext())
-        val view = layoutInflater.inflate(R.layout.bottom_modal_routing, null)
-        val startButton = view.findViewById<Button>(R.id.button_routing_cancel)
-        startButton.setOnClickListener(View.OnClickListener {
-            // get current position
-            Log.d("Trekle.HomeFragment", "Start routing")
-            removeRoute()
-            dialog.dismiss()
-        })
-        dialog.setCancelable(false)
-        dialog.setContentView(view)
-        dialog.show()
+
+    private fun openBottomSheetRouting(route: RouteResponse) {
+        val composeView = root.findViewById<ComposeView>(R.id.composeView)
+        composeView.setContent {
+            BottomSheetRouting(route, removeRoute = ::removeRoute, cancelPrevious = ::cancelPrevious)
+        }
+    }
+
+    private fun cancelPrevious() {
+        mapLibreMap.clear()
+        routeService.removeLastPoint()
     }
 
     private fun removeRoute() {
@@ -251,6 +245,7 @@ class MapFragment : Fragment(), OnMapReadyCallback, PermissionsListener, RouteLi
         // Implement this method to open a bottom sheet to select a point
 
     }
+
 
     private fun openBottomSheet(style: Style) {
         val dialog = BottomSheetDialog(requireContext())
@@ -379,7 +374,7 @@ class MapFragment : Fragment(), OnMapReadyCallback, PermissionsListener, RouteLi
         """.trimIndent()
         activity?.runOnUiThread {
             mapLibreMap.style?.let { initRouteSource(it, lineString) }
-            openBottomSheetRouting()
+            openBottomSheetRouting(route)
         }
     }
 }
